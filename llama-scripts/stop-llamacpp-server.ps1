@@ -64,6 +64,54 @@ function Unload-LoadedModels {
     }
 }
 
+function Assert-ServerProcessStopped {
+    param([int]$PidValue)
+
+    for ($Attempt = 1; $Attempt -le 20; $Attempt++) {
+        $RemainingProcess = Get-Process -Id $PidValue -ErrorAction SilentlyContinue
+
+        if (-not $RemainingProcess -or $RemainingProcess.ProcessName -ine "llama-server") {
+            return
+        }
+
+        Start-Sleep -Milliseconds 500
+    }
+
+    $RemainingProcess = Get-Process -Id $PidValue -ErrorAction SilentlyContinue
+    if ($RemainingProcess -and $RemainingProcess.ProcessName -ieq "llama-server") {
+        throw "Failed to stop llama-server process PID $PidValue. Run PowerShell as administrator or stop the scheduled-task-owned process manually."
+    }
+}
+
+function Assert-ServerPortReleased {
+    for ($Attempt = 1; $Attempt -le 10; $Attempt++) {
+        $Listeners = Get-NetTCPConnection `
+            -LocalAddress $HostName `
+            -LocalPort $Port `
+            -State Listen `
+            -ErrorAction SilentlyContinue
+
+        if (-not $Listeners) {
+            return
+        }
+
+        Start-Sleep -Milliseconds 500
+    }
+
+    $Listeners = Get-NetTCPConnection `
+        -LocalAddress $HostName `
+        -LocalPort $Port `
+        -State Listen `
+        -ErrorAction SilentlyContinue
+
+    if ($Listeners) {
+        $OwnerPids = $Listeners |
+        Select-Object -ExpandProperty OwningProcess -Unique
+
+        throw "Port $Port is still owned by PID $($OwnerPids -join ', ') after stopping llama-server. Run PowerShell as administrator or stop the scheduled-task-owned process manually."
+    }
+}
+
 function Stop-ServerProcess {
     $PidCandidates = @()
 
@@ -100,11 +148,15 @@ function Stop-ServerProcess {
             }
             catch {
                 Write-Warning "Process did not exit in 30 seconds. Killing PID $PidValue"
-                Stop-Process -Id $PidValue -Force -ErrorAction SilentlyContinue
+                Stop-Process -Id $PidValue -Force -ErrorAction Stop
+                Wait-Process -Id $PidValue -Timeout 10 -ErrorAction SilentlyContinue
             }
+
+            Assert-ServerProcessStopped -PidValue $PidValue
         }
     }
 
+    Assert-ServerPortReleased
     Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
 }
 

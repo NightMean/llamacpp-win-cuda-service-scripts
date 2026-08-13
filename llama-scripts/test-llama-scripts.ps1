@@ -75,6 +75,16 @@ Assert-True ($StartInvocationIndex -ge 0) "restart-llamacpp-server.ps1 should ca
 Assert-True ($StopInvocationIndex -lt $StartInvocationIndex) "restart-llamacpp-server.ps1 should stop before starting."
 Assert-True ($RestartScriptText -match "models\.ini") "restart-llamacpp-server.ps1 should explain that it applies models.ini changes."
 
+$StopScriptPath = Join-Path $ScriptsDir "stop-llamacpp-server.ps1"
+Assert-True (Test-Path $StopScriptPath) "stop-llamacpp-server.ps1 should exist."
+
+$StopScriptText = Get-Content -Path $StopScriptPath -Raw
+Assert-True ($StopScriptText -match "Assert-ServerProcessStopped") "stop-llamacpp-server.ps1 should verify that target llama-server processes are gone after Stop-Process."
+Assert-True ($StopScriptText -match "Assert-ServerPortReleased") "stop-llamacpp-server.ps1 should verify that the configured port is released after stopping."
+Assert-True ($StopScriptText -match 'for \(\$Attempt = 1; \$Attempt -le 20; \$Attempt\+\+\)') "stop-llamacpp-server.ps1 should tolerate delayed Windows process-object cleanup before reporting failure."
+Assert-True ($StopScriptText -match "Failed to stop llama-server process PID") "stop-llamacpp-server.ps1 should fail clearly when a target process remains after force stop."
+Assert-True ($StopScriptText -match "Port .* is still owned by PID") "stop-llamacpp-server.ps1 should fail clearly when the configured port remains bound."
+
 $TempLog = Join-Path ([System.IO.Path]::GetTempPath()) ("llama-log-test-" + [guid]::NewGuid().ToString("N") + ".log")
 try {
     Set-Content -Path $TempLog -Value ("x" * 128) -NoNewline
