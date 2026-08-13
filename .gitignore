@@ -1,6 +1,7 @@
 # Local secrets and machine-specific configuration.
 llama-config/github-token.txt
 llama-config/models.ini
+llama-config/models.ini.bak.*
 
 # Downloaded llama.cpp and CUDA release artifacts.
 llama-b*-bin-win-cuda-*-x64/
