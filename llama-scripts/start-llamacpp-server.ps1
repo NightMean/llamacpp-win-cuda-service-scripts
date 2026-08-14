@@ -8,8 +8,10 @@ $ConfigPath = Join-Path $BaseDir "llama-config\models.ini"
 $RuntimeDir = Join-Path $BaseDir "llama-runtime"
 $LogDir = Join-Path $BaseDir "llama-logs"
 
-$HostName = "127.0.0.1"
-$Port = 8080
+$ServerEndpoint = Get-LlamaServerEndpoint -ConfigPath $ConfigPath
+$HostName = $ServerEndpoint.HostName
+$Port = $ServerEndpoint.Port
+$BaseUrl = $ServerEndpoint.BaseUrl
 
 # 空闲多少秒后自动 sleep / 卸载模型。
 # 900 = 15 分钟；你也可以改成 1800 或 3600。
@@ -25,7 +27,7 @@ New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 function Test-LlamaServerAlive {
     try {
         Invoke-WebRequest `
-            -Uri "http://$HostName`:$Port/health" `
+            -Uri "$BaseUrl/health" `
             -UseBasicParsing `
             -TimeoutSec 2 | Out-Null
 
@@ -37,7 +39,7 @@ function Test-LlamaServerAlive {
 }
 
 if (Test-LlamaServerAlive) {
-    Write-Host "llama-server is already running at http://$HostName`:$Port"
+    Write-Host "llama-server is already running at $BaseUrl"
     exit 0
 }
 
@@ -51,20 +53,23 @@ if (-not (Test-Path $ConfigPath)) {
     throw "models.ini not found: $ConfigPath"
 }
 
-$Args = @(
+$ArgumentValues = @(
     "--host", $HostName,
     "--port", "$Port",
     "--models-preset", $ConfigPath,
     "--models-max", "1",
     "--sleep-idle-seconds", "$SleepIdleSeconds"
 )
+$ArgumentString = ($ArgumentValues | ForEach-Object {
+    ConvertTo-LlamaWindowsCommandLineArgument -Value $_
+}) -join " "
 
 Write-Host "Starting llama-server..."
-Write-Host "$ExePath $($Args -join ' ')"
+Write-Host "$ExePath $ArgumentString"
 
 $Process = Start-Process `
     -FilePath $ExePath `
-    -ArgumentList $Args `
+    -ArgumentList $ArgumentString `
     -WorkingDirectory $CurrentDir `
     -WindowStyle Hidden `
     -RedirectStandardOutput $StdOutLog `
@@ -77,7 +82,7 @@ for ($i = 1; $i -le 60; $i++) {
     Start-Sleep -Seconds 1
 
     if (Test-LlamaServerAlive) {
-        Write-Host "llama-server started: http://$HostName`:$Port"
+        Write-Host "llama-server started: $BaseUrl"
         exit 0
     }
 

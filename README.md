@@ -47,6 +47,26 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\llama-scripts\start-ll
 ```
 
 The default server URL is `http://127.0.0.1:8080`.
+The bind address and port are read from the `[*]` section of
+`llama-config/models.ini`, so moving to another machine or port does not require
+editing the start, stop, or update scripts.
+
+To start the server automatically when Windows starts, even before the user
+logs on, run this command in an elevated PowerShell window:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\llama-scripts\register-start-task-at-startup.ps1
+```
+
+If the `Start llama.cpp server` task does not exist, this command creates it.
+It only replaces a task when one with the same name already exists. The task
+runs 30 seconds after system startup by default; use `-DelaySeconds` to change
+the delay. The repository may be installed in any directory because the script
+resolves the project path from its own location.
+
+The task uses S4U so it can run without storing the account password. Windows
+does not give S4U tasks access to network shares or EFS-encrypted files, so keep
+the repository, configuration, and GGUF models on locally accessible paths.
 
 ## Scripts
 
@@ -60,8 +80,12 @@ The default server URL is `http://127.0.0.1:8080`.
   so `llama-config/models.ini` changes are loaded.
 - `llama-scripts/check-llamacpp-version.ps1`: compares the local active build
   with the latest upstream release.
+- `llama-scripts/register-start-task-at-startup.ps1`: registers a Windows
+  startup task that does not require an interactive logon; it creates the task
+  on a new machine and replaces an old task only when the same name exists.
 - `llama-scripts/register-update-task-run-logged-off.ps1`: registers a Windows
-  scheduled task for periodic updates.
+  scheduled task for periodic updates; it creates the task on a new machine and
+  replaces an old task only when the same name exists.
 - `llama-scripts/test-llama-scripts.ps1`: runs lightweight script tests.
 
 ## Configuration

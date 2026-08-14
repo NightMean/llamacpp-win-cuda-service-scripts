@@ -8,9 +8,10 @@ $PidFile = Join-Path $RuntimeDir "llama-server.pid"
 $CurrentDir = Join-Path $BaseDir "llama-current"
 $ConfigPath = Join-Path $BaseDir "llama-config\models.ini"
 
-$HostName = "127.0.0.1"
-$Port = 8080
-$BaseUrl = "http://$HostName`:$Port"
+$ServerEndpoint = Get-LlamaServerEndpoint -ConfigPath $ConfigPath
+$HostName = $ServerEndpoint.HostName
+$Port = $ServerEndpoint.Port
+$BaseUrl = $ServerEndpoint.BaseUrl
 
 function Test-LlamaServerAlive {
     try {
@@ -26,8 +27,35 @@ function Test-LlamaServerAlive {
     }
 }
 
+function Test-ManagedServerOwnsEndpoint {
+    $Listeners = Get-NetTCPConnection `
+        -LocalPort $Port `
+        -State Listen `
+        -ErrorAction SilentlyContinue
+
+    foreach ($Listener in $Listeners) {
+        $ListenerProcess = Get-CimInstance Win32_Process `
+            -Filter "ProcessId = $($Listener.OwningProcess)" `
+            -ErrorAction SilentlyContinue
+
+        if (Test-LlamaManagedServerProcess `
+            -Process $ListenerProcess `
+            -CurrentDir $CurrentDir `
+            -ConfigPath $ConfigPath) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function Unload-LoadedModels {
     if (-not (Test-LlamaServerAlive)) {
+        return
+    }
+
+    if (-not (Test-ManagedServerOwnsEndpoint)) {
+        Write-Warning "Refusing to unload models because the process on $BaseUrl could not be verified as this llama.cpp installation."
         return
     }
 
@@ -86,7 +114,6 @@ function Assert-ServerProcessStopped {
 function Assert-ServerPortReleased {
     for ($Attempt = 1; $Attempt -le 10; $Attempt++) {
         $Listeners = Get-NetTCPConnection `
-            -LocalAddress $HostName `
             -LocalPort $Port `
             -State Listen `
             -ErrorAction SilentlyContinue
@@ -99,7 +126,6 @@ function Assert-ServerPortReleased {
     }
 
     $Listeners = Get-NetTCPConnection `
-        -LocalAddress $HostName `
         -LocalPort $Port `
         -State Listen `
         -ErrorAction SilentlyContinue
@@ -118,16 +144,28 @@ function Stop-ServerProcess {
     if (Test-Path $PidFile) {
         $SavedPid = (Get-Content $PidFile -Raw).Trim()
         if ($SavedPid -match "^\d+$") {
-            $PidCandidates += [int]$SavedPid
+            $SavedProcess = Get-CimInstance Win32_Process `
+                -Filter "ProcessId = $SavedPid" `
+                -ErrorAction SilentlyContinue
+
+            if (Test-LlamaManagedServerProcess `
+                -Process $SavedProcess `
+                -CurrentDir $CurrentDir `
+                -ConfigPath $ConfigPath) {
+                $PidCandidates += [int]$SavedPid
+            }
+            elseif ($SavedProcess) {
+                Write-Warning "Ignoring unverified PID file: PID $SavedPid does not match this llama.cpp installation or its details are inaccessible."
+            }
         }
     }
 
     $Processes = Get-CimInstance Win32_Process |
     Where-Object {
-        $_.Name -ieq "llama-server.exe" -and (
-            $_.CommandLine -like "*$ConfigPath*" -or
-            $_.ExecutablePath -like "$CurrentDir*"
-        )
+        Test-LlamaManagedServerProcess `
+            -Process $_ `
+            -CurrentDir $CurrentDir `
+            -ConfigPath $ConfigPath
     }
 
     foreach ($Proc in $Processes) {

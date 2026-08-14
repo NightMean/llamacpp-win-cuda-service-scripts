@@ -16,14 +16,16 @@ $CurrentLink = Join-Path $BaseDir "llama-current"
 $ScriptsDir = Join-Path $BaseDir "llama-scripts"
 $DownloadCacheDir = Join-Path $BaseDir "llama-download-cache"
 $LogDir = Join-Path $BaseDir "llama-logs"
+$ConfigPath = Join-Path $BaseDir "llama-config\models.ini"
 
 $StopScript = Join-Path $ScriptsDir "stop-llamacpp-server.ps1"
 $StartScript = Join-Path $ScriptsDir "start-llamacpp-server.ps1"
 
 $GitHubApi = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
-$HostName = "127.0.0.1"
-$Port = 8080
-$BaseUrl = "http://$HostName`:$Port"
+$ServerEndpoint = Get-LlamaServerEndpoint -ConfigPath $ConfigPath
+$HostName = $ServerEndpoint.HostName
+$Port = $ServerEndpoint.Port
+$BaseUrl = $ServerEndpoint.BaseUrl
 
 # Keep local old versions and cached main zips after a successful update.
 $KeepVersions = 2

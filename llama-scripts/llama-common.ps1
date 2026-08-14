@@ -4,6 +4,175 @@ function Get-LlamaProjectRoot {
     return (Split-Path -Parent $ScriptsDir)
 }
 
+function Get-LlamaServerEndpoint {
+    param(
+        [string]$ConfigPath,
+        [string]$DefaultHostName = "127.0.0.1",
+        [ValidateRange(1, 65535)]
+        [int]$DefaultPort = 8080
+    )
+
+    $HostName = $DefaultHostName
+    $Port = $DefaultPort
+
+    if (Test-Path $ConfigPath) {
+        $InGlobalSection = $false
+
+        foreach ($Line in Get-Content -Path $ConfigPath) {
+            $TrimmedLine = $Line.Trim()
+
+            if (-not $TrimmedLine -or $TrimmedLine.StartsWith("#") -or $TrimmedLine.StartsWith(";")) {
+                continue
+            }
+
+            if ($TrimmedLine -match "^\[(?<Section>[^]]+)\]$") {
+                $InGlobalSection = $Matches.Section.Trim() -eq "*"
+                continue
+            }
+
+            if (-not $InGlobalSection -or $TrimmedLine -notmatch "^(?<Key>[^=]+)=(?<Value>.*)$") {
+                continue
+            }
+
+            $Key = $Matches.Key.Trim().ToLowerInvariant()
+            $Value = $Matches.Value.Trim()
+
+            switch ($Key) {
+                "host" {
+                    if (-not $Value) {
+                        throw "Global host value is empty in $ConfigPath"
+                    }
+
+                    $HostName = $Value
+                }
+                "port" {
+                    $ParsedPort = 0
+                    if (-not [int]::TryParse($Value, [ref]$ParsedPort) -or $ParsedPort -lt 1 -or $ParsedPort -gt 65535) {
+                        throw "Global port value must be an integer from 1 to 65535 in $ConfigPath`: $Value"
+                    }
+
+                    $Port = $ParsedPort
+                }
+            }
+        }
+    }
+
+    $HealthHost = $HostName
+    if ($HealthHost -eq "0.0.0.0") {
+        $HealthHost = "127.0.0.1"
+    }
+    elseif ($HealthHost -eq "::") {
+        $HealthHost = "::1"
+    }
+
+    if ($HealthHost.Contains(":") -and -not $HealthHost.StartsWith("[")) {
+        $HealthHost = "[$HealthHost]"
+    }
+
+    return [pscustomobject]@{
+        HostName = $HostName
+        Port = $Port
+        BaseUrl = "http://$HealthHost`:$Port"
+    }
+}
+
+function ConvertTo-LlamaWindowsCommandLineArgument {
+    param(
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    if ($null -eq $Value -or $Value.Length -eq 0) {
+        return '""'
+    }
+
+    if ($Value -notmatch '[\s"]') {
+        return $Value
+    }
+
+    $Builder = [System.Text.StringBuilder]::new()
+    [void]$Builder.Append('"')
+    $BackslashCount = 0
+
+    foreach ($Character in $Value.ToCharArray()) {
+        if ($Character -eq '\') {
+            $BackslashCount++
+            continue
+        }
+
+        if ($Character -eq '"') {
+            [void]$Builder.Append(('\' * (($BackslashCount * 2) + 1)))
+            [void]$Builder.Append('"')
+            $BackslashCount = 0
+            continue
+        }
+
+        if ($BackslashCount -gt 0) {
+            [void]$Builder.Append(('\' * $BackslashCount))
+            $BackslashCount = 0
+        }
+
+        [void]$Builder.Append($Character)
+    }
+
+    if ($BackslashCount -gt 0) {
+        [void]$Builder.Append(('\' * ($BackslashCount * 2)))
+    }
+
+    [void]$Builder.Append('"')
+    return $Builder.ToString()
+}
+
+function Test-LlamaManagedServerProcess {
+    param(
+        [object]$Process,
+        [string]$CurrentDir,
+        [string]$ConfigPath
+    )
+
+    if (-not $Process -or $Process.Name -ine "llama-server.exe") {
+        return $false
+    }
+
+    $CommandLine = [string]$Process.CommandLine
+    if ($CommandLine -and $CommandLine.IndexOf($ConfigPath, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        return $true
+    }
+
+    $ExecutablePath = [string]$Process.ExecutablePath
+    if (-not $ExecutablePath) {
+        return $false
+    }
+
+    try {
+        $ExpectedRoot = [System.IO.Path]::GetFullPath($CurrentDir).TrimEnd('\')
+        $ActualPath = [System.IO.Path]::GetFullPath($ExecutablePath)
+        return $ActualPath.StartsWith("$ExpectedRoot\", [StringComparison]::OrdinalIgnoreCase)
+    }
+    catch {
+        return $false
+    }
+}
+
+function Get-LlamaScheduledTaskRegistrationMode {
+    param(
+        [AllowNull()]
+        [object]$ExistingTask
+    )
+
+    if ($null -eq $ExistingTask) {
+        return [pscustomobject]@{
+            Result = "Created"
+            ShouldForce = $false
+        }
+    }
+
+    return [pscustomobject]@{
+        Result = "Replaced"
+        ShouldForce = $true
+    }
+}
+
 function Get-LlamaGitHubToken {
     param([string]$BaseDir)
 

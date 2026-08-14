@@ -44,6 +44,22 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\llama-scripts\start-ll
 ```
 
 默认服务地址是 `http://127.0.0.1:8080`。
+监听地址和端口统一读取自 `llama-config/models.ini` 的 `[*]` 段；更换设备或端口时
+不需要修改启动、停止或更新脚本。
+
+若要让服务器在 Windows 启动后自动运行（即使用户尚未登录），请在管理员
+PowerShell 中执行：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\llama-scripts\register-start-task-at-startup.ps1
+```
+
+如果名为 `Start llama.cpp server` 的任务不存在，该命令会直接创建；仅当同名任务
+已经存在时才会覆盖。任务默认在系统启动 30 秒后运行，可通过 `-DelaySeconds`
+调整延迟。仓库可以位于任意目录，脚本会根据自身位置确定项目路径。
+
+该任务使用 S4U 实现无需登录运行。Windows 不会为它保存账户密码，但 S4U 任务不能
+访问网络共享或 EFS 加密文件；请将仓库、配置和 GGUF 模型放在本地可访问路径中。
 
 ## 脚本
 
@@ -55,8 +71,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\llama-scripts\start-ll
 - `llama-scripts/restart-llamacpp-server.ps1`：先停止再启动 server，用于让
   `llama-config/models.ini` 修改生效。
 - `llama-scripts/check-llamacpp-version.ps1`：比较本地启用版本和上游最新 release。
+- `llama-scripts/register-start-task-at-startup.ps1`：注册无需用户登录的 Windows
+  开机启动任务；新设备上直接创建，存在同名旧任务时将其替换。
 - `llama-scripts/register-update-task-run-logged-off.ps1`：注册周期更新的 Windows
-  计划任务。
+  计划任务；新设备上直接创建，存在同名旧任务时将其替换。
 - `llama-scripts/test-llama-scripts.ps1`：运行轻量脚本测试。
 
 ## 配置
