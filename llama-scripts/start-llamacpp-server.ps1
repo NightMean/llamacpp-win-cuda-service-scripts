@@ -77,6 +77,33 @@ if (-not (Test-Path $ConfigPath)) {
     throw "models.ini not found: $ConfigPath"
 }
 
+# Pre-flight check: validate configured model file paths in models.ini
+$CurrentSection = ""
+$MissingModels = @()
+foreach ($Line in Get-Content -Path $ConfigPath) {
+    $Trimmed = $Line.Trim()
+    if ($Trimmed -match "^\[(?<Section>[^\]]+)\]$") {
+        $CurrentSection = $Matches.Section.Trim()
+        continue
+    }
+    if ($Trimmed -match "^model\s*=\s*(?<ModelPath>.+)$") {
+        $ModelPath = $Matches.ModelPath.Trim().Trim('"').Trim("'")
+        if (-not (Test-Path $ModelPath)) {
+            $MissingModels += [pscustomobject]@{
+                Section = $CurrentSection
+                Path    = $ModelPath
+            }
+        }
+    }
+}
+
+if ($MissingModels.Count -gt 0) {
+    Write-Warning "Found $($MissingModels.Count) model preset(s) pointing to non-existent GGUF file(s):"
+    foreach ($Missing in $MissingModels) {
+        Write-Warning "  - [$($Missing.Section)] -> $($Missing.Path)"
+    }
+}
+
 $ArgumentValues = @(
     "--host", $HostName,
     "--port", "$Port",
