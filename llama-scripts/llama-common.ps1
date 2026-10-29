@@ -14,6 +14,11 @@ function Get-LlamaServerEndpoint {
 
     $HostName = $DefaultHostName
     $Port = $DefaultPort
+    $ApiKey = $null
+    $MemoryMargin = $null
+    $Device = $null
+    $SleepIdleSeconds = 1800
+    $ModelsMax = 1
 
     if (Test-Path $ConfigPath) {
         $InGlobalSection = $false
@@ -53,6 +58,24 @@ function Get-LlamaServerEndpoint {
 
                     $Port = $ParsedPort
                 }
+                "api-key" { $ApiKey = $Value }
+                "api_key" { $ApiKey = $Value }
+                "memory-margin" { $MemoryMargin = $Value }
+                "models-memory-margin" { $MemoryMargin = $Value }
+                "device" { $Device = $Value }
+                "main-gpu" { $Device = $Value }
+                "sleep-idle-seconds" {
+                    $ParsedSec = 0
+                    if ([int]::TryParse($Value, [ref]$ParsedSec) -and $ParsedSec -ge 0) {
+                        $SleepIdleSeconds = $ParsedSec
+                    }
+                }
+                "models-max" {
+                    $ParsedMax = 0
+                    if ([int]::TryParse($Value, [ref]$ParsedMax) -and $ParsedMax -ge 1) {
+                        $ModelsMax = $ParsedMax
+                    }
+                }
             }
         }
     }
@@ -70,9 +93,14 @@ function Get-LlamaServerEndpoint {
     }
 
     return [pscustomobject]@{
-        HostName = $HostName
-        Port = $Port
-        BaseUrl = "http://$HealthHost`:$Port"
+        HostName         = $HostName
+        Port             = $Port
+        BaseUrl          = "http://$HealthHost`:$Port"
+        ApiKey           = $ApiKey
+        MemoryMargin     = $MemoryMargin
+        Device           = $Device
+        SleepIdleSeconds = $SleepIdleSeconds
+        ModelsMax        = $ModelsMax
     }
 }
 

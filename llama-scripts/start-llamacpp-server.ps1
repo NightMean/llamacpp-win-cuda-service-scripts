@@ -13,9 +13,8 @@ $HostName = $ServerEndpoint.HostName
 $Port = $ServerEndpoint.Port
 $BaseUrl = $ServerEndpoint.BaseUrl
 
-# 空闲多少秒后自动 sleep / 卸载模型。
-# 900 = 15 分钟；你也可以改成 1800 或 3600。
-$SleepIdleSeconds = 1800
+$SleepIdleSeconds = $ServerEndpoint.SleepIdleSeconds
+$ModelsMax = $ServerEndpoint.ModelsMax
 
 $PidFile = Join-Path $RuntimeDir "llama-server.pid"
 $StdOutLog = Join-Path $LogDir "llama-server.out.log"
@@ -26,8 +25,14 @@ New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 
 function Test-LlamaServerAlive {
     try {
+        $Headers = @{}
+        if ($ServerEndpoint.ApiKey) {
+            $Headers["Authorization"] = "Bearer $($ServerEndpoint.ApiKey)"
+        }
+
         Invoke-WebRequest `
             -Uri "$BaseUrl/health" `
+            -Headers $Headers `
             -UseBasicParsing `
             -TimeoutSec 2 | Out-Null
 
@@ -57,9 +62,22 @@ $ArgumentValues = @(
     "--host", $HostName,
     "--port", "$Port",
     "--models-preset", $ConfigPath,
-    "--models-max", "1",
+    "--models-max", "$ModelsMax",
     "--sleep-idle-seconds", "$SleepIdleSeconds"
 )
+
+if ($ServerEndpoint.MemoryMargin) {
+    $ArgumentValues += @("--models-memory-margin", "$($ServerEndpoint.MemoryMargin)")
+}
+
+if ($ServerEndpoint.Device) {
+    $ArgumentValues += @("--device", "$($ServerEndpoint.Device)")
+}
+
+if ($ServerEndpoint.ApiKey) {
+    $ArgumentValues += @("--api-key", "$($ServerEndpoint.ApiKey)")
+}
+
 $ArgumentString = ($ArgumentValues | ForEach-Object {
     ConvertTo-LlamaWindowsCommandLineArgument -Value $_
 }) -join " "

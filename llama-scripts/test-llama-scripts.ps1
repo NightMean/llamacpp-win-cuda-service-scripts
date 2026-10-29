@@ -58,6 +58,11 @@ try {
         "[*]",
         "host = 0.0.0.0",
         "port = 18080",
+        "api-key = secret123",
+        "memory-margin = 1024",
+        "device = 0",
+        "sleep-idle-seconds = 600",
+        "models-max = 2",
         "",
         "[example]",
         "port = 9999"
@@ -67,6 +72,11 @@ try {
     Assert-Equal "0.0.0.0" $Endpoint.HostName "The global models.ini host should control the server bind address."
     Assert-Equal 18080 $Endpoint.Port "The global models.ini port should control the server port."
     Assert-Equal "http://127.0.0.1:18080" $Endpoint.BaseUrl "A wildcard bind address should use loopback for health checks."
+    Assert-Equal "secret123" $Endpoint.ApiKey "api-key should be parsed from models.ini."
+    Assert-Equal "1024" $Endpoint.MemoryMargin "memory-margin should be parsed from models.ini."
+    Assert-Equal "0" $Endpoint.Device "device should be parsed from models.ini."
+    Assert-Equal 600 $Endpoint.SleepIdleSeconds "sleep-idle-seconds should be parsed from models.ini."
+    Assert-Equal 2 $Endpoint.ModelsMax "models-max should be parsed from models.ini."
 }
 finally {
     Remove-Item -Path $TempEndpointConfig -Force -ErrorAction SilentlyContinue

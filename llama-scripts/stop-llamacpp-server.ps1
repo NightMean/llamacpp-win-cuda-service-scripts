@@ -15,8 +15,14 @@ $BaseUrl = $ServerEndpoint.BaseUrl
 
 function Test-LlamaServerAlive {
     try {
+        $Headers = @{}
+        if ($ServerEndpoint.ApiKey) {
+            $Headers["Authorization"] = "Bearer $($ServerEndpoint.ApiKey)"
+        }
+
         Invoke-WebRequest `
             -Uri "$BaseUrl/health" `
+            -Headers $Headers `
             -UseBasicParsing `
             -TimeoutSec 2 | Out-Null
 
@@ -61,9 +67,15 @@ function Unload-LoadedModels {
 
     try {
         Write-Host "Querying loaded models..."
+        $Headers = @{}
+        if ($ServerEndpoint.ApiKey) {
+            $Headers["Authorization"] = "Bearer $($ServerEndpoint.ApiKey)"
+        }
+
         $ModelsResponse = Invoke-RestMethod `
             -Method Get `
             -Uri "$BaseUrl/models" `
+            -Headers $Headers `
             -TimeoutSec 10
 
         foreach ($Model in $ModelsResponse.data) {
@@ -80,6 +92,7 @@ function Unload-LoadedModels {
                 Invoke-RestMethod `
                     -Method Post `
                     -Uri "$BaseUrl/models/unload" `
+                    -Headers $Headers `
                     -ContentType "application/json" `
                     -Body $Body `
                     -TimeoutSec 60 | Out-Null
