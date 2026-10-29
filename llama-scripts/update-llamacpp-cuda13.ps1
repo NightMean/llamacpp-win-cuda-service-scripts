@@ -358,18 +358,39 @@ function Set-CurrentLinkToInstallDir {
         throw "Refusing to switch: llama-server.exe not found in $TargetDir"
     }
 
-    if (Test-Path $CurrentLink) {
-        $Item = Get-Item $CurrentLink -Force
-
-        if (-not ($Item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-            throw "$CurrentLink already exists and is not a junction/symlink. Refusing to remove it."
+    # Ensure no lingering llama processes are holding file locks
+    $LlamaProcs = Get-CimInstance Win32_Process | Where-Object { $_.Name -match "^llama-(server|cli|bench|quantize)\.exe$" }
+    if ($LlamaProcs) {
+        Write-Warning "Terminating lingering llama process(es) before junction update..."
+        foreach ($Proc in $LlamaProcs) {
+            Stop-Process -Id $Proc.ProcessId -Force -ErrorAction SilentlyContinue
         }
-
-        Remove-Item $CurrentLink -Force -Recurse -Confirm:$false
+        Start-Sleep -Seconds 1
     }
 
-    Write-Host "Creating llama-current junction -> $TargetDir"
-    New-Item -ItemType Junction -Path $CurrentLink -Target $TargetDir | Out-Null
+    $MaxAttempts = 5
+    for ($Attempt = 1; $Attempt -le $MaxAttempts; $Attempt++) {
+        try {
+            if (Test-Path $CurrentLink) {
+                $Item = Get-Item $CurrentLink -Force
+
+                if (-not ($Item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                    throw "$CurrentLink already exists and is not a junction/symlink. Refusing to remove it."
+                }
+
+                Remove-Item $CurrentLink -Force -Recurse -Confirm:$false
+            }
+
+            Write-Host "Creating llama-current junction -> $TargetDir"
+            New-Item -ItemType Junction -Path $CurrentLink -Target $TargetDir | Out-Null
+            return
+        }
+        catch {
+            if ($Attempt -ge $MaxAttempts) { throw }
+            Write-Warning "Junction update attempt $Attempt/$MaxAttempts failed ($($_.Exception.Message)). Retrying in 1s..."
+            Start-Sleep -Seconds 1
+        }
+    }
 }
 
 # =========================

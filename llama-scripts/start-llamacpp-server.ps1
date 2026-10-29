@@ -23,6 +23,25 @@ $StdErrLog = Join-Path $LogDir "llama-server.err.log"
 New-Item -ItemType Directory -Path $RuntimeDir -Force | Out-Null
 New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 
+function Rotate-LogFile {
+    param(
+        [string]$Path,
+        [int64]$MaxBytes = 5242880,
+        [int]$KeepFiles = 3
+    )
+
+    if ((Test-Path $Path) -and ((Get-Item $Path).Length -ge $MaxBytes)) {
+        for ($Index = $KeepFiles - 1; $Index -ge 1; $Index--) {
+            $Source = "$Path.$Index"
+            $Destination = "$Path.$($Index + 1)"
+            if (Test-Path $Source) {
+                Move-Item -Path $Source -Destination $Destination -Force
+            }
+        }
+        Move-Item -Path $Path -Destination "$Path.1" -Force
+    }
+}
+
 function Test-LlamaServerAlive {
     try {
         $Headers = @{}
@@ -81,6 +100,9 @@ if ($ServerEndpoint.ApiKey) {
 $ArgumentString = ($ArgumentValues | ForEach-Object {
     ConvertTo-LlamaWindowsCommandLineArgument -Value $_
 }) -join " "
+
+Rotate-LogFile -Path $StdOutLog
+Rotate-LogFile -Path $StdErrLog
 
 Write-Host "Starting llama-server..."
 Write-Host "$ExePath $ArgumentString"
