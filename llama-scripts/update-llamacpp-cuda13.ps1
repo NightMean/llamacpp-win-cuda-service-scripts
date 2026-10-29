@@ -105,6 +105,67 @@ function Get-CurrentLinkTarget {
     return $Item.FullName
 }
 
+function Download-FileWithProgressBar {
+    param(
+        [string]$Uri,
+        [string]$OutFile
+    )
+
+    $HttpClientHandler = [System.Net.Http.HttpClientHandler]::new()
+    $HttpClient = [System.Net.Http.HttpClient]::new($HttpClientHandler)
+    $HttpClient.Timeout = [System.TimeSpan]::FromMinutes(10)
+
+    try {
+        $Response = $HttpClient.GetAsync($Uri, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+        [void]$Response.EnsureSuccessStatusCode()
+
+        $TotalBytes = $Response.Content.Headers.ContentLength
+        $Stream = $Response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+        $FileStream = [System.IO.FileStream]::new($OutFile, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+
+        $Buffer = [byte[]]::new(65536)
+        $BytesRead = 0
+        $TotalBytesRead = 0
+        $Stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+        $LastUpdate = [System.Diagnostics.Stopwatch]::StartNew()
+
+        while (($BytesRead = $Stream.Read($Buffer, 0, $Buffer.Length)) -gt 0) {
+            $FileStream.Write($Buffer, 0, $BytesRead)
+            $TotalBytesRead += $BytesRead
+
+            if ($LastUpdate.ElapsedMilliseconds -ge 200 -or ($TotalBytes -and $TotalBytesRead -ge $TotalBytes)) {
+                $ElapsedSec = [Math]::Max(0.001, $Stopwatch.Elapsed.TotalSeconds)
+                $SpeedMBps = ($TotalBytesRead / 1MB) / $ElapsedSec
+                $DownloadedMB = $TotalBytesRead / 1MB
+
+                if ($TotalBytes -and $TotalBytes -gt 0) {
+                    $Percent = [Math]::Min(100, [int](($TotalBytesRead / $TotalBytes) * 100))
+                    $TotalMB = $TotalBytes / 1MB
+                    $BarWidth = 25
+                    $Filled = [Math]::Min($BarWidth, [int](($Percent / 100) * $BarWidth))
+                    $Bar = ("=" * $Filled) + (" " * ($BarWidth - $Filled))
+                    $Status = "`r[$Bar] $Percent% | $([Math]::Round($DownloadedMB, 1)) / $([Math]::Round($TotalMB, 1)) MB | $([Math]::Round($SpeedMBps, 1)) MB/s"
+                }
+                else {
+                    $Status = "`r[Streaming] $([Math]::Round($DownloadedMB, 1)) MB | $([Math]::Round($SpeedMBps, 1)) MB/s"
+                }
+
+                Write-Host -NoNewline $Status
+                $LastUpdate.Restart()
+            }
+        }
+
+        Write-Host ""
+        $FileStream.Flush()
+    }
+    finally {
+        if ($FileStream) { $FileStream.Dispose() }
+        if ($Stream) { $Stream.Dispose() }
+        if ($Response) { $Response.Dispose() }
+        if ($HttpClient) { $HttpClient.Dispose() }
+    }
+}
+
 function Invoke-WebRequestWithRetry {
     param(
         [string]$Uri,
@@ -114,18 +175,26 @@ function Invoke-WebRequestWithRetry {
 
     for ($Attempt = 1; $Attempt -le $Retries; $Attempt++) {
         try {
-            Invoke-WebRequest -Uri $Uri -OutFile $OutFile -TimeoutSec 600
+            Download-FileWithProgressBar -Uri $Uri -OutFile $OutFile
             return
         }
         catch {
             $Message = $_.Exception.Message
-            Write-Warning "Download failed, attempt $Attempt/$Retries`: $Message"
-
-            if ($Attempt -ge $Retries) {
-                throw
+            Write-Warning "Streaming download attempt $Attempt/$Retries failed ($Message). Falling back to Invoke-WebRequest..."
+            try {
+                Invoke-WebRequest -Uri $Uri -OutFile $OutFile -TimeoutSec 600
+                return
             }
+            catch {
+                $FallbackMessage = $_.Exception.Message
+                Write-Warning "Download failed, attempt $Attempt/$Retries`: $FallbackMessage"
 
-            Start-Sleep -Seconds ([Math]::Min(30, 5 * $Attempt))
+                if ($Attempt -ge $Retries) {
+                    throw
+                }
+
+                Start-Sleep -Seconds ([Math]::Min(30, 5 * $Attempt))
+            }
         }
     }
 }
@@ -137,13 +206,46 @@ function Copy-ZipContentToInstallDir {
     )
 
     $ExtractDir = Join-Path `
-    ([System.IO.Path]::GetDirectoryName($ZipPath)) `
-    ([System.IO.Path]::GetFileNameWithoutExtension($ZipPath))
+        ([System.IO.Path]::GetDirectoryName($ZipPath)) `
+        ([System.IO.Path]::GetFileNameWithoutExtension($ZipPath))
 
     Remove-Item $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Path $ExtractDir -Force | Out-Null
 
-    Expand-Archive -Path $ZipPath -DestinationPath $ExtractDir -Force
+    try {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $Archive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+        try {
+            $TotalEntries = $Archive.Entries.Count
+            $CurrentIndex = 0
+            $LastPercent = -1
+
+            foreach ($Entry in $Archive.Entries) {
+                $CurrentIndex++
+                $Percent = [int](($CurrentIndex / [Math]::Max(1, $TotalEntries)) * 100)
+                if ($Percent -ne $LastPercent -and ($Percent % 10 -eq 0 -or $Percent -eq 100)) {
+                    Write-Host -NoNewline "`rExtracting: $Percent% ($CurrentIndex / $TotalEntries files)"
+                    $LastPercent = $Percent
+                }
+                $DestFilePath = [System.IO.Path]::Combine($ExtractDir, $Entry.FullName)
+                $DestDirPath = [System.IO.Path]::GetDirectoryName($DestFilePath)
+                if ($DestDirPath -and -not (Test-Path $DestDirPath)) {
+                    [System.IO.Directory]::CreateDirectory($DestDirPath) | Out-Null
+                }
+                if (-not $Entry.FullName.EndsWith("/") -and -not $Entry.FullName.EndsWith("\")) {
+                    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($Entry, $DestFilePath, $true)
+                }
+            }
+            Write-Host ""
+        }
+        finally {
+            $Archive.Dispose()
+        }
+    }
+    catch {
+        Write-Warning "ZipFile extraction encountered error, falling back to Expand-Archive: $($_.Exception.Message)"
+        Expand-Archive -Path $ZipPath -DestinationPath $ExtractDir -Force
+    }
 
     $Items = Get-ChildItem -Path $ExtractDir
 
