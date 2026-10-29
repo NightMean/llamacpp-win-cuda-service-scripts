@@ -72,6 +72,9 @@ finally {
     Remove-Item -Path $TempEndpointConfig -Force -ErrorAction SilentlyContinue
 }
 
+$DetectedMajor = Get-LlamaDetectedCudaMajor -DefaultMajor 13
+Assert-True ($DetectedMajor -ge 10) "Get-LlamaDetectedCudaMajor should return a valid CUDA major version."
+
 $ManagedConfigPath = "C:\Portable Install\llama-config\models.ini"
 $ManagedCurrentDir = "C:\Portable Install\llama-current"
 $ManagedByConfig = [pscustomobject]@{

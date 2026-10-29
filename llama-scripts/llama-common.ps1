@@ -76,6 +76,28 @@ function Get-LlamaServerEndpoint {
     }
 }
 
+function Get-LlamaDetectedCudaMajor {
+    param([int]$DefaultMajor = 13)
+
+    $NvidiaSmi = Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue
+    if ($NvidiaSmi) {
+        try {
+            $Output = (& $NvidiaSmi.Source 2>$null) -join " "
+            if ($Output -match "CUDA (?:UMD )?Version:\s*(\d+)") {
+                $Detected = [int]$Matches[1]
+                if ($Detected -ge 10 -and $Detected -le 20) {
+                    return $Detected
+                }
+            }
+        }
+        catch {
+            # Ignore and return default
+        }
+    }
+
+    return $DefaultMajor
+}
+
 function ConvertTo-LlamaWindowsCommandLineArgument {
     param(
         [AllowEmptyString()]

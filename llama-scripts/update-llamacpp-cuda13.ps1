@@ -1,12 +1,16 @@
 param(
-    [ValidateRange(1, 99)]
-    [int]$CudaMajor = 13,
+    [ValidateRange(0, 99)]
+    [int]$CudaMajor = 0,
     [switch]$CheckOnly
 )
 
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "llama-common.ps1")
+
+if ($CudaMajor -le 0) {
+    $CudaMajor = Get-LlamaDetectedCudaMajor -DefaultMajor 13
+}
 
 # =========================
 # User configuration
