@@ -247,4 +247,32 @@ finally {
     Remove-Item -Path $TempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# Test mock release scanning logic
+$MockReleases = @(
+    [pscustomobject]@{
+        tag_name = "v0.8.0"
+        prerelease = $false
+        assets = @(
+            [pscustomobject]@{ name = "llama-v0.8.0-bin-win-x64.zip" }
+        )
+    },
+    [pscustomobject]@{
+        tag_name = "b11988"
+        prerelease = $true
+        assets = @(
+            [pscustomobject]@{ name = "llama-b11988-bin-win-cuda-13.4-x64.zip" },
+            [pscustomobject]@{ name = "cudart-llama-bin-win-cuda-13.4-x64.zip" }
+        )
+    }
+)
+$FoundPair = $null
+foreach ($Rel in $MockReleases) {
+    try {
+        $FoundPair = Get-LatestWindowsCudaAssetPair -Assets $Rel.assets -CudaMajor 13
+        if ($FoundPair) { break }
+    } catch {}
+}
+Assert-True ($null -ne $FoundPair) "Scanner should discover CUDA asset pair even when releases contain non-matching tags."
+Assert-Equal 11988 $FoundPair.Build "Scanner should resolve the correct build number from mock assets."
+
 Write-Host "All llama script tests passed."

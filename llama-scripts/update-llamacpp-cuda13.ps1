@@ -21,7 +21,7 @@ $ConfigPath = Join-Path $BaseDir "llama-config\models.ini"
 $StopScript = Join-Path $ScriptsDir "stop-llamacpp-server.ps1"
 $StartScript = Join-Path $ScriptsDir "start-llamacpp-server.ps1"
 
-$GitHubApi = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
+$GitHubApi = "https://api.github.com/repos/ggml-org/llama.cpp/releases"
 $ServerEndpoint = Get-LlamaServerEndpoint -ConfigPath $ConfigPath
 $HostName = $ServerEndpoint.HostName
 $Port = $ServerEndpoint.Port
@@ -103,30 +103,6 @@ function Get-CurrentLinkTarget {
     }
 
     return $Item.FullName
-}
-
-function Invoke-RestMethodWithRetry {
-    param(
-        [string]$Uri,
-        [hashtable]$Headers,
-        [int]$Retries = 3
-    )
-
-    for ($Attempt = 1; $Attempt -le $Retries; $Attempt++) {
-        try {
-            return Invoke-RestMethod -Uri $Uri -Headers $Headers -TimeoutSec 60
-        }
-        catch {
-            $Message = $_.Exception.Message
-            Write-Warning "Invoke-RestMethod failed, attempt $Attempt/$Retries`: $Message"
-
-            if ($Attempt -ge $Retries) {
-                throw
-            }
-
-            Start-Sleep -Seconds ([Math]::Min(30, 5 * $Attempt))
-        }
-    }
 }
 
 function Invoke-WebRequestWithRetry {
@@ -302,10 +278,10 @@ try {
     Write-Host "Server alive before update: $(Test-LlamaServerAlive)"
 
     Write-Section "Checking latest llama.cpp release"
-    $Release = Invoke-RestMethodWithRetry -Uri $GitHubApi -Headers $Headers
-    Write-Host "Latest release tag: $($Release.tag_name)"
-
-    $AssetPair = Get-LatestWindowsCudaAssetPair -Assets $Release.assets -CudaMajor $CudaMajor
+    Write-Host "GitHub API endpoint: $GitHubApi"
+    $ReleaseInfo = Get-LatestLlamaCudaRelease -Headers $Headers -CudaMajor $CudaMajor -GitHubApi $GitHubApi
+    $Release = $ReleaseInfo.Release
+    $AssetPair = $ReleaseInfo.AssetPair
     $MainAsset = $AssetPair.MainAsset
     $CudaRuntimeAsset = $AssetPair.CudaRuntimeAsset
 

@@ -272,7 +272,88 @@ function Get-LatestWindowsCudaAssetPair {
     Where-Object { $_.name -match "win-cuda|cudart-llama-bin-win-cuda" } |
     Select-Object -ExpandProperty name
 
-    throw "Could not find a matching llama Windows x64 CUDA $CudaMajor.x main zip and CUDA runtime zip in latest release. Available CUDA assets: $($AvailableCudaAssets -join ', ')"
+    throw "Could not find a matching llama Windows x64 CUDA $CudaMajor.x main zip and CUDA runtime zip in release. Available CUDA assets: $($AvailableCudaAssets -join ', ')"
+}
+
+function Invoke-RestMethodWithRetry {
+    param(
+        [string]$Uri,
+        [hashtable]$Headers,
+        [int]$Retries = 3
+    )
+
+    for ($Attempt = 1; $Attempt -le $Retries; $Attempt++) {
+        try {
+            return Invoke-RestMethod -Uri $Uri -Headers $Headers -TimeoutSec 60
+        }
+        catch {
+            $Message = $_.Exception.Message
+            Write-Warning "Invoke-RestMethod failed, attempt $Attempt/$Retries`: $Message"
+
+            if ($Attempt -ge $Retries) {
+                throw
+            }
+
+            Start-Sleep -Seconds ([Math]::Min(30, 5 * $Attempt))
+        }
+    }
+}
+
+function Get-LatestLlamaCudaRelease {
+    param(
+        [hashtable]$Headers,
+        [int]$CudaMajor = 13,
+        [string]$GitHubApi = "https://api.github.com/repos/ggml-org/llama.cpp/releases"
+    )
+
+    # Note: ggml-org/llama.cpp automated build releases (bXXXX) are marked as pre-releases
+    # on GitHub. Querying /releases/latest returns only formal non-prerelease tags
+    # (e.g. v0.8.0), which lack Windows CUDA release assets. If a /releases/latest URL
+    # is passed, we automatically query /releases to discover the latest build release
+    # containing matching Windows CUDA assets.
+    $ReleasesApi = if ($GitHubApi.EndsWith("/latest")) {
+        $GitHubApi.Substring(0, $GitHubApi.Length - 7) + "?per_page=15"
+    }
+    elseif ($GitHubApi.Contains("?")) {
+        $GitHubApi
+    }
+    else {
+        "$GitHubApi`?per_page=15"
+    }
+
+    try {
+        $Releases = Invoke-RestMethodWithRetry -Uri $ReleasesApi -Headers $Headers
+        if ($Releases -isnot [array]) {
+            $Releases = @($Releases)
+        }
+
+        foreach ($Rel in $Releases) {
+            if (-not $Rel.assets) { continue }
+            try {
+                $Pair = Get-LatestWindowsCudaAssetPair -Assets $Rel.assets -CudaMajor $CudaMajor
+                if ($Pair) {
+                    return [pscustomobject]@{
+                        Release   = $Rel
+                        AssetPair = $Pair
+                    }
+                }
+            }
+            catch {
+                # This release did not have matching CUDA assets for the specified CUDA major, try next
+            }
+        }
+    }
+    catch {
+        Write-Warning "Failed to query releases list: $($_.Exception.Message)"
+    }
+
+    # Fallback to direct URL if /releases failed
+    $FallbackRel = Invoke-RestMethodWithRetry -Uri $GitHubApi -Headers $Headers
+    $Pair = Get-LatestWindowsCudaAssetPair -Assets $FallbackRel.assets -CudaMajor $CudaMajor
+    return [pscustomobject]@{
+        Release   = $FallbackRel
+        AssetPair = $Pair
+    }
 }
 
 function Start-LlamaTranscriptWithRotation {

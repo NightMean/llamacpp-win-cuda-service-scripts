@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 
 $BaseDir = Get-LlamaProjectRoot -ScriptsDir $PSScriptRoot
 $CurrentLink = Join-Path $BaseDir "llama-current"
-$GitHubApi = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
+$GitHubApi = "https://api.github.com/repos/ggml-org/llama.cpp/releases"
 $Headers = New-LlamaGitHubHeaders -BaseDir $BaseDir -UserAgent "llamacpp-version-check"
 
 Write-Host "Checking running llama-server..."
@@ -50,11 +50,10 @@ else {
 }
 
 Write-Host ""
-Write-Host "Checking GitHub latest release..."
-$Latest = Invoke-RestMethod -Uri $GitHubApi -Headers $Headers
-$LatestTag = $Latest.tag_name
-
-$LatestAssetPair = Get-LatestWindowsCudaAssetPair -Assets $Latest.assets -CudaMajor $CudaMajor
+Write-Host "Checking GitHub latest release ($GitHubApi)..."
+$ReleaseInfo = Get-LatestLlamaCudaRelease -Headers $Headers -CudaMajor $CudaMajor -GitHubApi $GitHubApi
+$LatestTag = $ReleaseInfo.Release.tag_name
+$LatestAssetPair = $ReleaseInfo.AssetPair
 
 Write-Host "GitHub latest tag: $LatestTag"
 
