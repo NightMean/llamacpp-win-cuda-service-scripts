@@ -71,13 +71,17 @@ the repository, configuration, and GGUF models on locally accessible paths.
 ## Scripts
 
 - `llama-scripts/update-llamacpp-cuda13.ps1`: downloads, installs, switches,
-  restarts, and cleans up old local builds.
+  restarts, and cleans up old local builds with visual download and extraction progress bars.
 - `llama-scripts/start-llamacpp-server.ps1`: starts `llama-server` with the local
-  models preset.
+  models preset and pre-flight model validation.
 - `llama-scripts/stop-llamacpp-server.ps1`: unloads loaded models and stops the
   server process.
 - `llama-scripts/restart-llamacpp-server.ps1`: stops and then starts the server
   so `llama-config/models.ini` changes are loaded.
+- `llama-scripts/check-llama-status.ps1`: checks process state, HTTP `/health`,
+  loaded models in VRAM (or idle zero-VRAM state), preset count, and live GPU/VRAM load.
+- `llama-scripts/rollback-llamacpp.ps1`: reverts `llama-current` to a previously
+  installed build and restarts the server.
 - `llama-scripts/check-llamacpp-version.ps1`: compares the local active build
   with the latest upstream release.
 - `llama-scripts/register-start-task-at-startup.ps1`: registers a Windows
@@ -88,10 +92,31 @@ the repository, configuration, and GGUF models on locally accessible paths.
   replaces an old task only when the same name exists.
 - `llama-scripts/test-llama-scripts.ps1`: runs lightweight script tests.
 
+## Convenience Wrappers (Root .bat files)
+
+For quick one-click execution without typing PowerShell commands:
+- `Start-Server.bat`: Launches `llama-server.exe` in the background with configured presets.
+- `Stop-Server.bat`: Gracefully unloads models and stops the server.
+- `Restart-Server.bat`: Restarts the server to pick up configuration changes.
+- `Check-Status.bat`: Runs the comprehensive server and GPU status checker.
+- `Update-LlamaCpp.bat`: Checks for new releases and updates with live progress indicators.
+- `Rollback-LlamaCpp.bat`: Quickly reverts to the previous build if a regression occurs.
+
 ## Configuration
 
 The private configuration file is `llama-config/models.ini`. It is ignored by
 Git because it usually contains machine-specific model paths.
+
+### Global Options in `models.ini` `[*]`
+
+The `[*]` section supports server and router configuration:
+- `host`: Bind address (`127.0.0.1` for local, `0.0.0.0` for LAN/containers).
+- `port`: Port to listen on (default `8080`).
+- `api-key`: Optional secret token to require for all HTTP requests.
+- `memory-margin`: MiB of VRAM to keep free per device to prevent OOM errors.
+- `device`: Target GPU index or device identifier.
+- `sleep-idle-seconds`: Unloads models from VRAM after N seconds of inactivity.
+- `models-max`: Maximum models loaded simultaneously.
 
 The private token file is `llama-config/github-token.txt`. It is also ignored by
 Git. Prefer environment variables when possible:

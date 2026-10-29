@@ -64,12 +64,14 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\llama-scripts\register
 ## 脚本
 
 - `llama-scripts/update-llamacpp-cuda13.ps1`：下载、安装、切换、重启，并清理旧
-  版本。
+  版本（支持下载和解压实时进度条）。
 - `llama-scripts/start-llamacpp-server.ps1`：使用本地 models preset 启动
-  `llama-server`。
+  `llama-server`（含模型文件启动前存在性检查）。
 - `llama-scripts/stop-llamacpp-server.ps1`：卸载已加载模型并停止 server 进程。
 - `llama-scripts/restart-llamacpp-server.ps1`：先停止再启动 server，用于让
   `llama-config/models.ini` 修改生效。
+- `llama-scripts/check-llama-status.ps1`：查看服务进程状态、HTTP `/health` 健康检查、已加载模型状态（或零显存空闲状态）及实时的 GPU/VRAM 占用。
+- `llama-scripts/rollback-llamacpp.ps1`：快速回滚 `llama-current` 至此前安装的历史版本并重启服务。
 - `llama-scripts/check-llamacpp-version.ps1`：比较本地启用版本和上游最新 release。
 - `llama-scripts/register-start-task-at-startup.ps1`：注册无需用户登录的 Windows
   开机启动任务；新设备上直接创建，存在同名旧任务时将其替换。
@@ -77,10 +79,31 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\llama-scripts\register
   计划任务；新设备上直接创建，存在同名旧任务时将其替换。
 - `llama-scripts/test-llama-scripts.ps1`：运行轻量脚本测试。
 
+## 便捷批处理入口 (根目录 .bat 文件)
+
+无需每次打开 PowerShell，双击即可执行常用操作：
+- `Start-Server.bat`：使用已配置的 presets 启动后台 server。
+- `Stop-Server.bat`：优雅卸载模型并停止 server 进程。
+- `Restart-Server.bat`：重启 server 以载入配置或 presets 更新。
+- `Check-Status.bat`：运行全面的服务状态与 GPU 占用检查。
+- `Update-LlamaCpp.bat`：自动检查并更新至最新匹配的 CUDA 构建，带实时下载进度。
+- `Rollback-LlamaCpp.bat`：当最新版本出现兼容性回归时，一键回退到上一个可用版本。
+
 ## 配置
 
 私有配置文件是 `llama-config/models.ini`。它通常包含本机模型路径，所以已被 Git
 忽略。
+
+### `models.ini` 全局 `[*]` 配置选项
+
+全局 `[*]` 小节支持路由与运行参数：
+- `host`：绑定地址（本地 `127.0.0.1`，局域网/容器访问 `0.0.0.0`）。
+- `port`：监听端口（默认 `8080`）。
+- `api-key`：可选 API 访问密钥，开启后全接口鉴权保护。
+- `memory-margin`：每个显卡预留空闲显存（MiB），防止多任务爆显存 (OOM)。
+- `device`：指定运行的目标 GPU 设备编号。
+- `sleep-idle-seconds`：空闲 N 秒后自动从显存卸载模型（闲置时零显存占用）。
+- `models-max`：同时加载的最大模型数量。
 
 私有 token 文件是 `llama-config/github-token.txt`，也已被 Git 忽略。更推荐使用
 环境变量：
